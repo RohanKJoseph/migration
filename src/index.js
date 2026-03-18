@@ -1,45 +1,54 @@
 const { Woo, Shopify } = require('./config/api-clients');
+const { tracker } = require('./services/tracker');
 const { mapWooProductToShopify } = require('./mappers/product-mapper');
-const tracker = require('./services/tracker');
 const limiter = require('./services/rate-limiter');
 
-async function runSafeMigration() {
-    console.log("Woo Client Check:", typeof Woo); // Should be 'object'
-    console.log("Woo Get Method Check:", typeof Woo?.get); // Should be 'function'
-  try {
-    console.log("🔍 Fetching batch from WooCommerce...");
-    const { data: wooProducts } = await Woo.get("products", { per_page: 50 });
+async function migrateAllProducts() {
+  let page = 1;
+  let keepGoing = true;
 
-    for (const item of wooProducts) {
-      // 1. CHECK: Has this been migrated already?
-      const existingId = await tracker.isMigrated(item.id.toString());
-      
-      if (existingId) {
-        console.log(`⏩ Skipping ${item.name} (Already on Shopify: ${existingId})`);
-        continue;
+  while (keepGoing) {
+    console.log(`\n📦 Fetching Page ${page} of Products...`);
+
+    try {
+      const { data: products } = await Woo.get('products', {
+        per_page: 50,
+        page: page
+      });
+
+      if (products.length === 0) {
+        console.log('🏁 No more products found.');
+        keepGoing = false;
+        break;
       }
 
-      // 2. SCHEDULE: Add to the rate-limited queue
-      await limiter.schedule(async () => {
-        try {
-          const shopifyData = mapWooProductToShopify(item);
-          const response = await Shopify.post('/products.json', shopifyData);
-          
-          const newShopifyId = response.data.product.id;
-          
-          // 3. RECORD: Save the success to SQLite
-          tracker.saveMapping(item.id.toString(), newShopifyId);
-          console.log(`✅ Migrated: ${item.name}`);
-        } catch (err) {
-          console.error(`❌ Failed ${item.name}:`, err.response?.data || err.message);
-        }
-      });
-    }
+      for (const item of products) {
+        const existingId = await tracker.isMigrated(item.id.toString());
 
-    console.log("🏁 Migration loop finished.");
-  } catch (error) {
-    console.error("FATAL ERROR:", error.message);
+        if (existingId) {
+          // This keeps your console clean while still showing progress
+          console.log(`⏩ Skipping: ${item.name}`);
+          continue;
+        }
+
+        await limiter.schedule(async () => {
+          try {
+            const shopifyData = mapWooProductToShopify(item);
+            const response = await Shopify.post('/products.json', shopifyData);
+            tracker.saveMapping(item.id.toString(), response.data.product.id);
+            console.log(`✅ Migrated: ${item.name}`);
+          } catch (err) {
+            console.error(`❌ Failed ${item.name}:`, err.response?.data || err.message);
+          }
+        });
+      }
+
+      page++; // Move to next page for the next loop iteration
+    } catch (error) {
+      console.error('💀 Batch Error:', error.message);
+      keepGoing = false;
+    }
   }
 }
 
-runSafeMigration();
+migrateAllProducts();

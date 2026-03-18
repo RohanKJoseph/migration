@@ -1,4 +1,4 @@
-const { Woo } = require('./src/config/api-clients');
+const { Woo } = require('./api-clients');
 
 async function check() {
   try {
