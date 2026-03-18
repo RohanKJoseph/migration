@@ -2,6 +2,7 @@ const { Woo, Shopify } = require('./config/api-clients');
 const { tracker } = require('./services/tracker');
 const { mapWooProductToShopify } = require('./mappers/product-mapper');
 const limiter = require('./services/rate-limiter');
+const { migrateCustomersAndOrders } = require('./services/migration-service');
 
 async function migrateAllProducts() {
   let page = 1;
@@ -51,4 +52,11 @@ async function migrateAllProducts() {
   }
 }
 
-migrateAllProducts();
+async function runAllMigrations() {
+  await migrateAllProducts();
+  await migrateCustomersAndOrders();
+}
+
+runAllMigrations().catch((err) => {
+  console.error('Migration Failed:', err.message);
+});
