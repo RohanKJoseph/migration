@@ -8,20 +8,32 @@ const formatPhone = (phone) => {
   return cleaned.startsWith('91') ? `+${cleaned}` : `+91${cleaned}`;
 };
 
-const mapWooCustomerToShopify = (woo) => {
+const mapWooMetaToShopify = (wooMetaArray = []) => {
+  return wooMetaArray.map((meta) => ({
+    namespace: "migration_data",
+    key: String(meta.key || "").replace(/^_/, ""),
+    value: String(meta.value ?? ""),
+    type: "single_line_text_field"
+  }));
+};
+
+const mapWooCustomerToShopify = (source) => {
+  const billing = source?.billing || source || {};
+  const metaData = Array.isArray(source?.meta_data) ? source.meta_data : [];
+
   return {
     customer: {
-      first_name: woo.first_name || "Guest",
-      last_name: woo.last_name || "Customer",
-      email: woo.email,
-      phone: formatPhone(woo.billing?.phone), // Fixes the 'is invalid' error
+      first_name: billing.first_name || "Guest",
+      last_name: billing.last_name || "Customer", // NEVER leave this blank
+      email: billing.email,
       verified_email: true,
       addresses: [{
-        address1: woo.billing?.address_1 || "",
-        city: woo.billing?.city || "",
-        zip: woo.billing?.postcode || "",
-        country: woo.billing?.country || "IN"
-      }]
+        address1: billing.address_1 || "",
+        city: billing.city || "",
+        zip: billing.postcode || "",
+        country: billing.country || "IN"
+      }],
+      ...(metaData.length > 0 ? { metafields: mapWooMetaToShopify(metaData) } : {})
     }
   };
 };

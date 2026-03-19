@@ -10,7 +10,15 @@ db.serialize(() => {
     shopify_id TEXT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
-  db.run("CREATE TABLE IF NOT EXISTS customer_map (woo_id TEXT PRIMARY KEY, shopify_id TEXT)");
+  db.run(`CREATE TABLE IF NOT EXISTS customer_map (
+    woo_id TEXT,
+    shopify_id TEXT,
+    email TEXT,
+    PRIMARY KEY (woo_id)
+  )`);
+  db.run("ALTER TABLE customer_map ADD COLUMN email TEXT", () => {});
+  db.run("CREATE INDEX IF NOT EXISTS idx_email ON customer_map (email)");
+  db.run("CREATE TABLE IF NOT EXISTS customer_map_by_email (email TEXT PRIMARY KEY, shopify_id TEXT)");
   db.run("CREATE TABLE IF NOT EXISTS order_map (woo_id TEXT PRIMARY KEY, shopify_id TEXT)");
 });
 
@@ -35,8 +43,24 @@ const customerTracker = {
       });
     });
   },
-  save: (wooId, shopifyId) => {
-    db.run("INSERT INTO customer_map (woo_id, shopify_id) VALUES (?, ?)", [wooId, shopifyId]);
+  getIdByEmail: (email) => {
+    return new Promise((resolve) => {
+      db.get("SELECT shopify_id FROM customer_map WHERE email = ?", [email], (err, row) => {
+        resolve(row ? row.shopify_id : null);
+      });
+    });
+  },
+  save: (wooId, shopifyId, email = null) => {
+    db.run(
+      "INSERT OR REPLACE INTO customer_map (woo_id, shopify_id, email) VALUES (?, ?, ?)",
+      [wooId, shopifyId, email]
+    );
+  },
+  saveByEmail: (email, shopifyId) => {
+    db.run(
+      "INSERT OR REPLACE INTO customer_map_by_email (email, shopify_id) VALUES (?, ?)",
+      [email, shopifyId]
+    );
   }
 };
 

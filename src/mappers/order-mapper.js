@@ -3,16 +3,19 @@
 const mapWooOrderToShopify = (wooOrder, shopifyCustomerId) => {
   return {
     order: {
-      customer: { id: shopifyCustomerId },
+      // FIX: Force the ID to be an Integer
+      customer: { 
+        id: parseInt(shopifyCustomerId, 10) 
+      },
       line_items: wooOrder.line_items.map(item => ({
-        // Fallback to item name or generic 'Product' to prevent blank title errors
-        title: item.name || "Purchased Product", 
+        title: item.name || "Product",
         quantity: item.quantity,
         price: item.price,
         sku: item.sku || ""
       })),
       financial_status: 'paid',
       fulfillment_status: 'fulfilled',
+      processed_at: wooOrder.date_created,
       send_receipt: false
     }
   };
