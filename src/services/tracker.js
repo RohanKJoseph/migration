@@ -1,6 +1,10 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
 // Initialize database in the root folder
 const db = new sqlite3.Database(path.join(__dirname, '../../migration.db'));
 
@@ -31,7 +35,23 @@ const tracker = {
     });
   },
   saveMapping: (wooId, shopifyId) => {
-    db.run("INSERT INTO product_map (woo_id, shopify_id) VALUES (?, ?)", [wooId, shopifyId]);
+    return new Promise((resolve, reject) => {
+      db.run(
+        `INSERT INTO product_map (woo_id, shopify_id)
+         VALUES (?, ?)
+         ON CONFLICT(woo_id) DO UPDATE SET
+           shopify_id = excluded.shopify_id,
+           timestamp = CURRENT_TIMESTAMP`,
+        [wooId, shopifyId],
+        (err) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        }
+      );
+    });
   }
 };
 
@@ -45,21 +65,40 @@ const customerTracker = {
   },
   getIdByEmail: (email) => {
     return new Promise((resolve) => {
-      db.get("SELECT shopify_id FROM customer_map WHERE email = ?", [email], (err, row) => {
-        resolve(row ? row.shopify_id : null);
+      const normalizedEmail = normalizeEmail(email);
+      if (!normalizedEmail) {
+        resolve(null);
+        return;
+      }
+
+      db.get("SELECT shopify_id FROM customer_map_by_email WHERE LOWER(email) = ?", [normalizedEmail], (err, row) => {
+        if (row?.shopify_id) {
+          resolve(row.shopify_id);
+          return;
+        }
+
+        db.get("SELECT shopify_id FROM customer_map WHERE LOWER(email) = ?", [normalizedEmail], (err2, row2) => {
+          resolve(row2 ? row2.shopify_id : null);
+        });
       });
     });
   },
   save: (wooId, shopifyId, email = null) => {
+    const normalizedEmail = normalizeEmail(email);
     db.run(
       "INSERT OR REPLACE INTO customer_map (woo_id, shopify_id, email) VALUES (?, ?, ?)",
-      [wooId, shopifyId, email]
+      [wooId, shopifyId, normalizedEmail || null]
     );
   },
   saveByEmail: (email, shopifyId) => {
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail) {
+      return;
+    }
+
     db.run(
       "INSERT OR REPLACE INTO customer_map_by_email (email, shopify_id) VALUES (?, ?)",
-      [email, shopifyId]
+      [normalizedEmail, shopifyId]
     );
   }
 };
